@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="login">
+        <h2>Identifícate</h2>
+        <form id="loginForm">
+            <label for="nombre">Nombre:</label>
+            <input type="text" id="nombre" required>
+            <label for="estado">Estado:</label>
+            <input type="text" id="estado" required>
+            <label for="avatar">Elige tu avatar:</label>
+            <select id="avatar" required>
+                <option value="img/avatar1.png">Hombre</option>
+                <option value="img/avatar2.jpg">Mujer</option>
+                <option value="img/avatar3.jpg">Foto anónima</option>
+                <option value="custom">Subir una foto o URL</option>
+            </select>
+            <div id="customAvatar" style="display: none;">
+                <label for="customAvatarInput">Subir una foto o URL:</label>
+                <input type="text" id="customAvatarInput">
+            </div>
+            <button type="submit">Entrar</button>
+        </form>
+    </div>
+
+    <div id="landingPage" style="display: none;">
+        <h2>Bienvenido al Chat</h2>
+        <p>Hola <span id="userName"></span>, ¡bienvenido al chat!</p>
+        <button id="enterChat">Entrar al Chat</button>
+    </div>
+
+    <div id="chatContainer" style="display: none;">
+        <div id="sidebar">
+            <h3>Usuarios Conectados</h3>
+            <ul id="listaUsuarios"></ul>
+            <h3>Salas de Chat</h3>
+            <ul id="listaSalas">
+                <li data-sala="General">General</li>
+                <li data-sala="Deportes">Deportes</li>
+                <li data-sala="Tecnología">Tecnología</li>
+            </ul>
+            <input type="text" id="nuevaSala" placeholder="Nombre de la nueva sala">
+            <button id="crearSala">Crear Sala</button>
+            <button id="eliminarSala">Eliminar Sala</button>
+        </div>
+
+        <div id="chat">
+            <div id="mensajes"></div>
+            <div id="escribiendo" style="display: none;"></div>
+            <div id="entrada">
+                <input type="text" id="cajaTexto" placeholder="Escribe un mensaje...">
+                <button id="enviar">Enviar</button>
+                <input type="file" id="fileInput" style="display: none;">
+                <button id="subirArchivo">Subir Archivo</button>
+            </div>
+        </div>
+
+        <div id="miniPestana" style="display: none;">
+            <h3>Chat Privado con <span id="nombreDestinatario"></span></h3>
+            <div id="mensajesPrivados"></div>
+            <div id="escribiendoPrivado" style="display: none;"></div>
+            <div id="entradaPrivada">
+                <input type="text" id="cajaTextoPrivado" placeholder="Escribe un mensaje...">
+                <button id="enviarPrivado">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para visualizar imágenes -->
+    <div id="imageModal" class="modal">
+        <span class="close">&times;</span>
+        <img class="modal-content" id="modalImage">
+        <div id="caption"></div>
+        <a id="downloadLink" download>Descarga aquí</a>
+    </div>
+
+    <script>
+        window.onload = () => {
+            const socket = io();
+
+            const loginForm = document.getElementById("loginForm");
+            const loginContainer = document.getElementById("login");
+            const landingPage = document.getElementById("landingPage");
+            const chatContainer = document.getElementById("chatContainer");
+            const avatarSelect = document.getElementById("avatar");
+            const customAvatarDiv = document.getElementById("customAvatar");
+            const customAvatarInput = document.getElementById("customAvatarInput");
+            const userNameSpan = document.getElementById("userName");
+            const enterChatButton = document.getElementById("enterChat");
+
+            let btnEnviar = document.getElementById("enviar");
+            let cajaTexto = document.getElementById("cajaTexto");
+            let mensajes = document.getElementById("mensajes");
+            let listaUsuarios = document.getElementById("listaUsuarios");
+            let listaSalas = document.getElementById("listaSalas");
+            let escribiendo = document.getElementById("escribiendo");
+            let fileInput = document.getElementById("fileInput");
+            let btnSubirArchivo = document.getElementById("subirArchivo");
+
+            let btnEnviarPrivado = document.getElementById("enviarPrivado");
+            let cajaTextoPrivado = document.getElementById("cajaTextoPrivado");
+            let mensajesPrivados = document.getElementById("mensajesPrivados");
+            let nombreDestinatario = document.getElementById("nombreDestinatario");
+            let escribiendoPrivado = document.getElementById("escribiendoPrivado");
+
+            let miNombre, miEstado, miImagen;
+
+            avatarSelect.addEventListener("change", () => {
+                if (avatarSelect.value === "custom") {
+                    customAvatarDiv.style.display = "block";
+                } else {
+                    customAvatarDiv.style.display = "none";
+                }
+            });
+
+            loginForm.addEventListener("submit", (e) => {
+                e.preventDefault();
+                miNombre = document.getElementById("nombre").value;
+                miEstado = document.getElementById("estado").value;
+                miImagen = avatarSelect.value === "custom" ? customAvatarInput.value : avatarSelect.value;
+
+                let usuario = { nombre: miNombre, estado: miEstado, imagen: miImagen };
+                socket.emit("identificarse", usuario);
+
+                loginContainer.style.display = "none";
+                landingPage.style.display = "flex";
+                userNameSpan.textContent = miNombre;
+            });
+
+            enterChatButton.addEventListener("click", () => {
+                landingPage.style.display = "none";
+                chatContainer.style.display = "flex";
+            });
+
+            listaSalas.addEventListener("click", (e) => {
+                if (e.target.tagName === 'LI') {
+                    let sala = e.target.getAttribute('data-sala');
+                    socket.emit('unirseSala', sala);
+                    document.getElementById("chat").style.display = 'block';
+                    document.getElementById("miniPestana").style.display = 'none';
+                }
+            });
+
+            const enviarMensaje = () => {
+                let datosAEnviar = {
+                    nombre: miNombre,
+                    imagen: miImagen,
+                    mensaje: cajaTexto.value
+                };
+                socket.emit("mensaje", datosAEnviar);
+                cajaTexto.value = ''; 
+            };
+
+            const enviarMensajePrivado = () => {
+                let datosAEnviar = {
+                    destinatario: nombreDestinatario.innerText,
+                    mensaje: cajaTextoPrivado.value
+                };
+                socket.emit("mensajePrivado", datosAEnviar);
+                mensajesPrivados.innerHTML += `<div class="mensaje own"><strong>${miNombre}</strong>${cajaTextoPrivado.value}</div>`;
+                cajaTextoPrivado.value = ''; 
+            };
+
+            btnEnviar.addEventListener("click", enviarMensaje);
+            btnEnviarPrivado.addEventListener("click", enviarMensajePrivado);
+
+            cajaTexto.addEventListener("keypress", (e) => {
+                if (e.key === 'Enter') {
+                    enviarMensaje();
+                }
+            });
+
+            cajaTextoPrivado.addEventListener("keypress", (e) => {
+                if (e.key === 'Enter') {
+                    enviarMensajePrivado();
+                }
+            });
+
+            cajaTexto.addEventListener("input", () => {
+                socket.emit("escribiendo", miNombre);
+            });
+
+            cajaTextoPrivado.addEventListener("input", () => {
+                socket.emit("escribiendoPrivado", { nombre: miNombre, destinatario: nombreDestinatario.innerText });
+            });
+
+            listaUsuarios.addEventListener("click", (e) => {
+                if (e.target.tagName === 'LI') {
+                    nombreDestinatario.innerText = e.target.getAttribute('data-usuario');
+                    document.getElementById("miniPestana").style.display = 'block';
+                }
+            });
+
+            btnSubirArchivo.addEventListener("click", () => {
+                fileInput.click();
+            });
+
+            fileInput.addEventListener("change", () => {
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const datosAEnviar = {
+                        nombre: miNombre,
+                        imagen: miImagen,
+                        archivo: reader.result,
+                        nombreArchivo: file.name,
+                        tipoArchivo: file.type
+                    };
+                    socket.emit("archivo", datosAEnviar);
+                };
+                reader.readAsDataURL(file);
+            });
+
+            document.getElementById("crearSala").addEventListener("click", () => {
+                const nuevaSala = document.getElementById("nuevaSala").value;
+                if (nuevaSala) {
+                    socket.emit("crearSala", nuevaSala);
+                    document.getElementById("nuevaSala").value = '';
+                }
+            });
+
+            document.getElementById("eliminarSala").addEventListener("click", () => {
+                const sala = listaSalas.querySelector('li.selected');
+                if (sala) {
+                    socket.emit("eliminarSala", sala.getAttribute('data-sala'));
+                }
+            });
+
+            socket.on("actualizarUsuarios", (usuarios) => {
+                listaUsuarios.innerHTML = '';
+                usuarios.forEach(usuario => {
+                    listaUsuarios.innerHTML += `
+                        <li data-usuario="${usuario.nombre}">
+                            <img src="${usuario.imagen}" alt="Avatar" width="30" height="30">
+                            <strong>${usuario.nombre}</strong> (${usuario.estado})
+                        </li>`;
+                });
+            });
+
+            socket.on("actualizarSalas", (salas) => {
+                listaSalas.innerHTML = '';
+                salas.forEach(sala => {
+                    listaSalas.innerHTML += `<li data-sala="${sala}">${sala}</li>`;
+                });
+            });
+
+            socket.on("mensaje", (datos) => {
+                let claseMensaje = datos.nombre === miNombre ? 'own' : 'other';
+                mensajes.innerHTML += `
+                    <div class="mensaje ${claseMensaje}">
+                        <img src="${datos.imagen}" alt="Avatar" width="30" height="30">
+                        <strong>${datos.nombre}</strong>: ${datos.mensaje}
+                    </div>`;
+                mensajes.scrollTop = mensajes.scrollHeight;
+            });
+
+            socket.on("archivo", (datos) => {
+                let claseMensaje = datos.nombre === miNombre ? 'own' : 'other';
+                let contenidoArchivo;
+
+                if (datos.tipoArchivo.startsWith('image/')) {
+                    contenidoArchivo = `
+                        <div class="archivo">
+                            <img src="${datos.archivo}" alt="Imagen compartida" class="enviada" data-src="${datos.archivo}" style="max-width: 300px; max-height: 300px;">
+                            <a href="${datos.archivo}" download="${datos.nombreArchivo}" class="downloadLink">⬇</a>
+                        </div>`;
+                } else {
+                    contenidoArchivo = `<a href="${datos.archivo}" download="${datos.nombreArchivo}">Descargar archivo</a>`;
+                }
+
+                mensajes.innerHTML += `
+                    <div class="mensaje ${claseMensaje}">
+                        <img src="${datos.imagen}" alt="Avatar" width="30" height="30">
+                        <strong>${datos.nombre}</strong>: ${contenidoArchivo}
+                    </div>`;
+                mensajes.scrollTop = mensajes.scrollHeight;
+
+                // Añadir evento para ver imagen
+                document.querySelectorAll('.enviada').forEach(img => {
+                    img.addEventListener('click', (e) => {
+                        const src = e.target.getAttribute('data-src');
+                        const modal = document.getElementById('imageModal');
+                        const modalImg = document.getElementById('modalImage');
+                        const captionText = document.getElementById('caption');
+                        const downloadLink = document.getElementById('downloadLink');
+
+                        modal.style.display = "block";
+                        modalImg.src = src;
+                        captionText.innerHTML = datos.nombre;
+                        downloadLink.href = src;
+                        downloadLink.download = datos.nombreArchivo;
+                    });
+                });
+            });
+
+            socket.on("mensajePrivado", (datos) => {
+                mensajesPrivados.innerHTML += `
+                    <div class="mensaje other">
+                        <img src="${datos.imagen}" alt="Avatar" width="30" height="30">
+                        <strong>${datos.nombre}</strong>: ${datos.mensaje}
+                    </div>`;
+                mensajesPrivados.scrollTop = mensajesPrivados.scrollHeight;
+            });
+
+            socket.on("escribiendo", (nombre) => {
+                escribiendo.innerHTML = `<div class="mensaje system">${nombre} está escribiendo...</div>`;
+                escribiendo.style.display = 'block';
+                setTimeout(() => {
+                    escribiendo.style.display = 'none';
+                }, 2000);
+            });
+
+            socket.on("escribiendoPrivado", (datos) => {
+                escribiendoPrivado.innerHTML = `<div class="mensaje system">${datos.nombre} está escribiendo...</div>`;
+                escribiendoPrivado.style.display = 'block';
+                setTimeout(() => {
+                    escribiendoPrivado.style.display = 'none';
+                }, 2000);
+            });
+
+            // Modal para visualizar imágenes
+            const modal = document.getElementById('imageModal');
+            const span = document.getElementsByClassName('close')[0];
+
+            span.onclick = function() {
+                modal.style.display = "none";
+            }
+
+            window.onclick = function(event) {
+                if (event.target == modal) {
+                    modal.style.display = "none";
+                }
+            }
+        }
+    </script>
+</body>
+</html>
